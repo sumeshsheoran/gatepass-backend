@@ -1,9 +1,15 @@
-const { User, Company } = require('../models');
+const { User, Company, UserCompany } = require('../models');
 const { Op } = require('sequelize');
 
-const fmt = (user, companies) => user.toSafeJSON(
-  companies ? companies.map((c) => c.id) : []
-);
+const getCompanyIds = async (userId) => {
+  const links = await UserCompany.findAll({ where: { userId } });
+  return links.map((l) => l.companyId);
+};
+
+const fmt = async (user) => {
+  const companyIds = await getCompanyIds(user.id);
+  return user.toSafeJSON(companyIds);
+};
 
 // GET /api/users
 const getUsers = async (req, res) => {
@@ -12,28 +18,22 @@ const getUsers = async (req, res) => {
     const where = {};
     if (role) where.role = role;
 
-    // Build company filter
-    let companyWhere = null;
+    let userIds = null;
+
     if (req.user.role === 'admin' && req.user.companyIds.length) {
-      companyWhere = { id: req.user.companyIds };
+      const links = await UserCompany.findAll({
+        where: { companyId: { [Op.in]: req.user.companyIds } },
+      });
+      userIds = links.map((l) => l.userId);
     } else if (companyId) {
-      companyWhere = { id: companyId };
+      const links = await UserCompany.findAll({ where: { companyId } });
+      userIds = links.map((l) => l.userId);
     }
 
-    const includeCompanies = {
-      model: Company,
-      attributes: ['id'],
-      through: { attributes: [] },
-      ...(companyWhere ? { where: companyWhere } : {}),
-    };
+    if (userIds !== null) where.id = { [Op.in]: userIds.length ? userIds : ['__none__'] };
 
-    const users = await User.findAll({
-      where,
-      include: [includeCompanies],
-      order: [['createdAt', 'DESC']],
-    });
-
-    const result = users.map((u) => fmt(u, u.Companies));
+    const users = await User.findAll({ where, order: [['createdAt', 'DESC']] });
+    const result = await Promise.all(users.map(fmt));
     res.json({ success: true, users: result });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -43,11 +43,9 @@ const getUsers = async (req, res) => {
 // GET /api/users/:id
 const getUser = async (req, res) => {
   try {
-    const user = await User.findByPk(req.params.id, {
-      include: [{ model: Company, attributes: ['id'], through: { attributes: [] } }],
-    });
+    const user = await User.findByPk(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
-    res.json({ success: true, user: fmt(user, user.Companies) });
+    res.json({ success: true, user: await fmt(user) });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -68,11 +66,13 @@ const createUser = async (req, res) => {
 
     const assignedIds = req.user.role === 'admin' ? req.user.companyIds : (companyIds || []);
     if (assignedIds.length) {
-      const companies = await Company.findAll({ where: { id: assignedIds } });
-      await user.setCompanies(companies);
+      await UserCompany.bulkCreate(
+        assignedIds.map((cId) => ({ userId: user.id, companyId: cId })),
+        { ignoreDuplicates: true }
+      );
     }
 
-    res.status(201).json({ success: true, user: fmt(user, null) });
+    res.status(201).json({ success: true, user: await fmt(user) });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -91,7 +91,7 @@ const updateUser = async (req, res) => {
     if (password) user.password = password;
 
     await user.save();
-    res.json({ success: true, user: fmt(user, []) });
+    res.json({ success: true, user: await fmt(user) });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -103,7 +103,17 @@ const searchHosts = async (req, res) => {
   try {
     if (!companyId) return res.status(400).json({ success: false, message: 'companyId required' });
 
-    const where = { role: 'host', isActive: true };
+    // Get all host user IDs linked to this company
+    const links = await UserCompany.findAll({ where: { companyId } });
+    const hostUserIds = links.map((l) => l.userId);
+
+    if (!hostUserIds.length) return res.json({ success: true, hosts: [] });
+
+    const where = {
+      id: { [Op.in]: hostUserIds },
+      role: 'host',
+      isActive: true,
+    };
     if (q) {
       where[Op.or] = [
         { name: { [Op.like]: `%${q}%` } },
@@ -115,12 +125,6 @@ const searchHosts = async (req, res) => {
     const hosts = await User.findAll({
       where,
       attributes: ['id', 'name', 'email', 'phone', 'photoUrl'],
-      include: [{
-        model: Company,
-        where: { id: companyId },
-        through: { attributes: [] },
-        attributes: [],
-      }],
       limit: 20,
     });
 

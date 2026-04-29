@@ -1,5 +1,5 @@
 const { validationResult } = require('express-validator');
-const { User } = require('../models');
+const { User, UserCompany } = require('../models');
 const { generateToken } = require('../utils/helpers');
 
 // POST /api/auth/login
@@ -15,8 +15,8 @@ const login = async (req, res) => {
     const isMatch = await user.matchPassword(password);
     if (!isMatch) return res.status(401).json({ success: false, message: 'Invalid credentials' });
 
-    const companies = await user.getCompanies({ attributes: ['id'] });
-    const companyIds = companies.map((c) => c.id);
+    const links = await UserCompany.findAll({ where: { userId: user.id } });
+    const companyIds = links.map((l) => l.companyId);
 
     const token = generateToken(user.id);
     res.json({ success: true, token, user: user.toSafeJSON(companyIds) });

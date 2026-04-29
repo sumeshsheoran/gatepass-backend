@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { User, Company } = require('../models');
+const { User, UserCompany } = require('../models');
 
 const protect = async (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -14,8 +14,8 @@ const protect = async (req, res, next) => {
     if (!user || !user.isActive) {
       return res.status(401).json({ success: false, message: 'User not found or deactivated' });
     }
-    const companies = await user.getCompanies({ attributes: ['id'] });
-    user.companyIds = companies.map((c) => c.id);
+    const links = await UserCompany.findAll({ where: { userId: user.id } });
+    user.companyIds = links.map((l) => l.companyId);
     req.user = user;
     next();
   } catch {

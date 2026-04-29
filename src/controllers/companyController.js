@@ -1,4 +1,4 @@
-const { Company, User } = require('../models');
+const { Company, User, UserCompany } = require('../models');
 
 // GET /api/companies
 const getCompanies = async (req, res) => {
@@ -10,7 +10,6 @@ const getCompanies = async (req, res) => {
         order: [['createdAt', 'DESC']],
       });
     } else {
-      // guard and superAdmin see all active companies
       companies = await Company.findAll({
         where: { isActive: true },
         order: [['createdAt', 'DESC']],
@@ -68,7 +67,9 @@ const assignGuard = async (req, res) => {
     if (!guard || guard.role !== 'guard') {
       return res.status(400).json({ success: false, message: 'User is not a guard' });
     }
-    await company.addUser(guard);
+    await UserCompany.findOrCreate({
+      where: { userId: guardId, companyId: req.params.id },
+    });
     res.json({ success: true, message: 'Guard assigned to company' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -78,9 +79,9 @@ const assignGuard = async (req, res) => {
 // DELETE /api/companies/:id/remove-guard/:guardId
 const removeGuard = async (req, res) => {
   try {
-    const company = await Company.findByPk(req.params.id);
-    const guard = await User.findByPk(req.params.guardId);
-    if (company && guard) await company.removeUser(guard);
+    await UserCompany.destroy({
+      where: { userId: req.params.guardId, companyId: req.params.id },
+    });
     res.json({ success: true, message: 'Guard removed from company' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
