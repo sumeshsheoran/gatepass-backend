@@ -7,8 +7,8 @@ const router = express.Router();
 
 router.use(protect);
 
-router.get('/', authorize('admin', 'superAdmin'), getCompanies);
-router.get('/:id', authorize('admin', 'superAdmin'), getCompany);
+router.get('/', authorize('admin', 'superAdmin', 'guard'), getCompanies);
+router.get('/:id', authorize('admin', 'superAdmin', 'guard'), getCompany);
 router.post('/', authorize('superAdmin'), createCompany);
 router.patch('/:id', authorize('superAdmin'), updateCompany);
 router.post('/:id/assign-guard', authorize('superAdmin'), assignGuard);

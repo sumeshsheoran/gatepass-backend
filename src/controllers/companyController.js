@@ -4,9 +4,9 @@ const { Company, User } = require('../models');
 const getCompanies = async (req, res) => {
   try {
     let companies;
-    if (req.user.role === 'admin') {
+    if (['admin', 'guard'].includes(req.user.role)) {
       companies = await Company.findAll({
-        where: { id: req.user.companyIds },
+        where: { id: req.user.companyIds.length ? req.user.companyIds : ['__none__'] },
         order: [['createdAt', 'DESC']],
       });
     } else {
