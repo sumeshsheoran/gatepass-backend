@@ -6,3 +6,4 @@ uploads/ids/*
 !uploads/ids/.gitkeep
 src/config/serviceAccountKey.json
 *.log
+database.sqlite
