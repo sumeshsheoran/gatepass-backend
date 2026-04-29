@@ -4,13 +4,17 @@ const { Company, User } = require('../models');
 const getCompanies = async (req, res) => {
   try {
     let companies;
-    if (['admin', 'guard'].includes(req.user.role)) {
+    if (req.user.role === 'admin') {
       companies = await Company.findAll({
         where: { id: req.user.companyIds.length ? req.user.companyIds : ['__none__'] },
         order: [['createdAt', 'DESC']],
       });
     } else {
-      companies = await Company.findAll({ order: [['createdAt', 'DESC']] });
+      // guard and superAdmin see all active companies
+      companies = await Company.findAll({
+        where: { isActive: true },
+        order: [['createdAt', 'DESC']],
+      });
     }
     res.json({ success: true, companies });
   } catch (err) {
