@@ -1,19 +1,18 @@
-const Visitor = require('../models/Visitor');
-const User = require('../models/User');
-const { paginate } = require('../utils/helpers');
+const { Visitor, User } = require('../models');
+const { Op } = require('sequelize');
 const notificationService = require('../services/notificationService');
-const path = require('path');
 
 const buildPhotoUrl = (filename, folder) => {
   if (!filename) return null;
-  return `${process.env.BASE_URL}/uploads/${folder}/${filename}`;
+  const base = process.env.BASE_URL || '';
+  return `${base}/uploads/${folder}/${filename}`;
 };
 
 // POST /api/visitors  — Guard only
 const createVisitor = async (req, res) => {
   const { companyId, hostId, visitorName, visitorPhone, visitorEmail, purpose } = req.body;
   try {
-    const host = await User.findById(hostId);
+    const host = await User.findByPk(hostId);
     if (!host || host.role !== 'host') {
       return res.status(400).json({ success: false, message: 'Invalid host' });
     }
@@ -27,7 +26,7 @@ const createVisitor = async (req, res) => {
 
     const visitor = await Visitor.create({
       companyId,
-      guardId: req.user._id,
+      guardId: req.user.id,
       guardName: req.user.name,
       hostId,
       hostName: host.name,
@@ -40,12 +39,11 @@ const createVisitor = async (req, res) => {
       idProofPhoto,
     });
 
-    // Push notification to host
     if (host.fcmToken) {
       await notificationService.sendToDevice(host.fcmToken, {
         title: 'Visitor Arrived',
         body: `${visitorName} is here to meet you. Purpose: ${purpose}`,
-        data: { visitorId: visitor._id.toString(), type: 'visitor_arrived' },
+        data: { visitorId: visitor.id, type: 'visitor_arrived' },
       });
     }
 
@@ -56,46 +54,38 @@ const createVisitor = async (req, res) => {
 };
 
 // GET /api/visitors
-// Guard: own visitors | Host: visitors for them | Admin: company visitors | SuperAdmin: all
 const getVisitors = async (req, res) => {
-  const { page, limit, skip } = paginate(req.query);
   const { status, companyId, date } = req.query;
-
   try {
-    let query = {};
+    const where = {};
 
     if (req.user.role === 'guard') {
-      query.guardId = req.user._id;
+      where.guardId = req.user.id;
     } else if (req.user.role === 'host') {
-      query.hostId = req.user._id;
+      where.hostId = req.user.id;
     } else if (req.user.role === 'admin') {
-      query.companyId = { $in: req.user.companyIds };
-      if (companyId && req.user.companyIds.map(String).includes(String(companyId))) {
-        query.companyId = companyId;
-      }
-    } else if (req.user.role === 'superAdmin') {
-      if (companyId) query.companyId = companyId;
+      where.companyId = { [Op.in]: req.user.companyIds.length ? req.user.companyIds : ['__none__'] };
+      if (companyId && req.user.companyIds.includes(companyId)) where.companyId = companyId;
+    } else if (req.user.role === 'superAdmin' && companyId) {
+      where.companyId = companyId;
     }
 
-    if (status) query.status = status;
+    if (status) where.status = status;
     if (date) {
       const start = new Date(date);
       start.setHours(0, 0, 0, 0);
       const end = new Date(date);
       end.setHours(23, 59, 59, 999);
-      query.checkInTime = { $gte: start, $lte: end };
+      where.checkInTime = { [Op.between]: [start, end] };
     }
 
-    const [visitors, total] = await Promise.all([
-      Visitor.find(query).sort({ checkInTime: -1 }).skip(skip).limit(limit),
-      Visitor.countDocuments(query),
-    ]);
-
-    res.json({
-      success: true,
-      visitors,
-      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    const visitors = await Visitor.findAll({
+      where,
+      order: [['checkInTime', 'DESC']],
+      limit: 100,
     });
+
+    res.json({ success: true, visitors, pagination: { total: visitors.length } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -104,7 +94,7 @@ const getVisitors = async (req, res) => {
 // GET /api/visitors/:id
 const getVisitor = async (req, res) => {
   try {
-    const visitor = await Visitor.findById(req.params.id);
+    const visitor = await Visitor.findByPk(req.params.id);
     if (!visitor) return res.status(404).json({ success: false, message: 'Visitor not found' });
     res.json({ success: true, visitor });
   } catch (err) {
@@ -115,27 +105,23 @@ const getVisitor = async (req, res) => {
 // PATCH /api/visitors/:id/approve  — Host only
 const approveVisitor = async (req, res) => {
   try {
-    const visitor = await Visitor.findById(req.params.id);
+    const visitor = await Visitor.findByPk(req.params.id);
     if (!visitor) return res.status(404).json({ success: false, message: 'Visitor not found' });
-
-    if (visitor.hostId.toString() !== req.user._id.toString()) {
+    if (visitor.hostId !== req.user.id) {
       return res.status(403).json({ success: false, message: 'Not your visitor' });
     }
     if (visitor.status !== 'pending') {
       return res.status(400).json({ success: false, message: 'Visitor already processed' });
     }
 
-    visitor.status = 'approved';
-    visitor.approvedAt = new Date();
-    await visitor.save();
+    await visitor.update({ status: 'approved', approvedAt: new Date() });
 
-    // Notify guard
-    const guard = await User.findById(visitor.guardId);
+    const guard = await User.findByPk(visitor.guardId);
     if (guard?.fcmToken) {
       await notificationService.sendToDevice(guard.fcmToken, {
         title: 'Visitor Approved',
         body: `${req.user.name} approved ${visitor.visitorName}`,
-        data: { visitorId: visitor._id.toString(), type: 'visitor_approved' },
+        data: { visitorId: visitor.id, type: 'visitor_approved' },
       });
     }
 
@@ -149,28 +135,23 @@ const approveVisitor = async (req, res) => {
 const denyVisitor = async (req, res) => {
   const { reason } = req.body;
   try {
-    const visitor = await Visitor.findById(req.params.id);
+    const visitor = await Visitor.findByPk(req.params.id);
     if (!visitor) return res.status(404).json({ success: false, message: 'Visitor not found' });
-
-    if (visitor.hostId.toString() !== req.user._id.toString()) {
+    if (visitor.hostId !== req.user.id) {
       return res.status(403).json({ success: false, message: 'Not your visitor' });
     }
     if (visitor.status !== 'pending') {
       return res.status(400).json({ success: false, message: 'Visitor already processed' });
     }
 
-    visitor.status = 'denied';
-    visitor.deniedAt = new Date();
-    visitor.denialReason = reason || null;
-    await visitor.save();
+    await visitor.update({ status: 'denied', deniedAt: new Date(), denialReason: reason || null });
 
-    // Notify guard
-    const guard = await User.findById(visitor.guardId);
+    const guard = await User.findByPk(visitor.guardId);
     if (guard?.fcmToken) {
       await notificationService.sendToDevice(guard.fcmToken, {
         title: 'Visitor Denied',
         body: `${req.user.name} denied entry for ${visitor.visitorName}${reason ? ': ' + reason : ''}`,
-        data: { visitorId: visitor._id.toString(), type: 'visitor_denied' },
+        data: { visitorId: visitor.id, type: 'visitor_denied' },
       });
     }
 
@@ -183,20 +164,16 @@ const denyVisitor = async (req, res) => {
 // PATCH /api/visitors/:id/checkout  — Guard only
 const checkoutVisitor = async (req, res) => {
   try {
-    const visitor = await Visitor.findById(req.params.id);
+    const visitor = await Visitor.findByPk(req.params.id);
     if (!visitor) return res.status(404).json({ success: false, message: 'Visitor not found' });
-
-    if (visitor.guardId.toString() !== req.user._id.toString()) {
+    if (visitor.guardId !== req.user.id) {
       return res.status(403).json({ success: false, message: 'Not your visitor entry' });
     }
     if (visitor.status !== 'approved') {
       return res.status(400).json({ success: false, message: 'Visitor must be approved before checkout' });
     }
 
-    visitor.status = 'checkedOut';
-    visitor.checkOutTime = new Date();
-    await visitor.save();
-
+    await visitor.update({ status: 'checkedOut', checkOutTime: new Date() });
     res.json({ success: true, visitor });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

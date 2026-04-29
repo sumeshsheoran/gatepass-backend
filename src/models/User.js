@@ -1,40 +1,43 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
 const bcrypt = require('bcryptjs');
+const sequelize = require('../config/db');
 
-const userSchema = new mongoose.Schema(
-  {
-    name: { type: String, required: true, trim: true },
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    password: { type: String, required: true, minlength: 6 },
-    phone: { type: String, required: true, trim: true },
-    role: {
-      type: String,
-      enum: ['guard', 'host', 'admin', 'superAdmin'],
-      required: true,
+const User = sequelize.define('User', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  name: { type: DataTypes.STRING, allowNull: false },
+  email: { type: DataTypes.STRING, allowNull: false, unique: true },
+  password: { type: DataTypes.STRING, allowNull: false },
+  phone: { type: DataTypes.STRING, defaultValue: '' },
+  role: { type: DataTypes.STRING, allowNull: false },
+  isActive: { type: DataTypes.BOOLEAN, defaultValue: true },
+  fcmToken: { type: DataTypes.STRING, defaultValue: null },
+  photoUrl: { type: DataTypes.STRING, defaultValue: null },
+}, {
+  hooks: {
+    beforeSave: async (user) => {
+      if (user.changed('password')) {
+        user.password = await bcrypt.hash(user.password, 10);
+      }
     },
-    // Companies this user is linked to (guards, hosts, admins)
-    companyIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Company' }],
-    fcmToken: { type: String, default: null },
-    photoUrl: { type: String, default: null },
-    isActive: { type: Boolean, default: true },
   },
-  { timestamps: true }
-);
-
-userSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) return next();
-  this.password = await bcrypt.hash(this.password, 10);
-  next();
 });
 
-userSchema.methods.matchPassword = async function (enteredPassword) {
-  return bcrypt.compare(enteredPassword, this.password);
+User.prototype.matchPassword = async function (entered) {
+  return bcrypt.compare(entered, this.password);
 };
 
-userSchema.methods.toJSON = function () {
-  const obj = this.toObject();
-  delete obj.password;
-  return obj;
+User.prototype.toSafeJSON = function (companyIds = []) {
+  return {
+    _id: this.id,
+    name: this.name,
+    email: this.email,
+    phone: this.phone,
+    role: this.role,
+    isActive: this.isActive,
+    photoUrl: this.photoUrl,
+    companyIds,
+    createdAt: this.createdAt,
+  };
 };
 
-module.exports = mongoose.model('User', userSchema);
+module.exports = User;

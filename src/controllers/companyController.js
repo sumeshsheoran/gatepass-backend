@@ -1,16 +1,17 @@
-const Company = require('../models/Company');
-const User = require('../models/User');
+const { Company, User } = require('../models');
 
-// GET /api/companies  — SuperAdmin: all | Admin: own companies
+// GET /api/companies
 const getCompanies = async (req, res) => {
   try {
-    let query = {};
+    let companies;
     if (req.user.role === 'admin') {
-      query = { _id: { $in: req.user.companyIds } };
+      companies = await Company.findAll({
+        where: { id: req.user.companyIds },
+        order: [['createdAt', 'DESC']],
+      });
+    } else {
+      companies = await Company.findAll({ order: [['createdAt', 'DESC']] });
     }
-    const companies = await Company.find(query)
-      .populate('adminId', 'name email phone')
-      .sort({ createdAt: -1 });
     res.json({ success: true, companies });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -20,9 +21,7 @@ const getCompanies = async (req, res) => {
 // GET /api/companies/:id
 const getCompany = async (req, res) => {
   try {
-    const company = await Company.findById(req.params.id)
-      .populate('adminId', 'name email phone')
-      .populate('guardIds', 'name email phone');
+    const company = await Company.findByPk(req.params.id);
     if (!company) return res.status(404).json({ success: false, message: 'Company not found' });
     res.json({ success: true, company });
   } catch (err) {
@@ -30,7 +29,7 @@ const getCompany = async (req, res) => {
   }
 };
 
-// POST /api/companies  — SuperAdmin only
+// POST /api/companies
 const createCompany = async (req, res) => {
   const { name, address, phone, email } = req.body;
   try {
@@ -41,54 +40,43 @@ const createCompany = async (req, res) => {
   }
 };
 
-// PATCH /api/companies/:id  — SuperAdmin only
+// PATCH /api/companies/:id
 const updateCompany = async (req, res) => {
-  const { name, address, phone, email, isActive } = req.body;
   try {
-    const company = await Company.findByIdAndUpdate(
-      req.params.id,
-      { name, address, phone, email, isActive },
-      { new: true, runValidators: true }
-    );
+    const company = await Company.findByPk(req.params.id);
     if (!company) return res.status(404).json({ success: false, message: 'Company not found' });
+    await company.update(req.body);
     res.json({ success: true, company });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// POST /api/companies/:id/assign-guard  — SuperAdmin only
+// POST /api/companies/:id/assign-guard
 const assignGuard = async (req, res) => {
   const { guardId } = req.body;
   try {
     const [company, guard] = await Promise.all([
-      Company.findById(req.params.id),
-      User.findById(guardId),
+      Company.findByPk(req.params.id),
+      User.findByPk(guardId),
     ]);
     if (!company) return res.status(404).json({ success: false, message: 'Company not found' });
     if (!guard || guard.role !== 'guard') {
       return res.status(400).json({ success: false, message: 'User is not a guard' });
     }
-
-    await Promise.all([
-      Company.findByIdAndUpdate(req.params.id, { $addToSet: { guardIds: guardId } }),
-      User.findByIdAndUpdate(guardId, { $addToSet: { companyIds: req.params.id } }),
-    ]);
-
+    await company.addUser(guard);
     res.json({ success: true, message: 'Guard assigned to company' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// DELETE /api/companies/:id/remove-guard/:guardId  — SuperAdmin only
+// DELETE /api/companies/:id/remove-guard/:guardId
 const removeGuard = async (req, res) => {
-  const { guardId } = req.params;
   try {
-    await Promise.all([
-      Company.findByIdAndUpdate(req.params.id, { $pull: { guardIds: guardId } }),
-      User.findByIdAndUpdate(guardId, { $pull: { companyIds: req.params.id } }),
-    ]);
+    const company = await Company.findByPk(req.params.id);
+    const guard = await User.findByPk(req.params.guardId);
+    if (company && guard) await company.removeUser(guard);
     res.json({ success: true, message: 'Guard removed from company' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

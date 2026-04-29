@@ -1,24 +1,40 @@
-const User = require('../models/User');
-const Company = require('../models/Company');
-const { generateToken } = require('../utils/helpers');
-const bcrypt = require('bcryptjs');
+const { User, Company } = require('../models');
+const { Op } = require('sequelize');
 
-// GET /api/users  — Admin: company users | SuperAdmin: all
+const fmt = (user, companies) => user.toSafeJSON(
+  companies ? companies.map((c) => c.id) : []
+);
+
+// GET /api/users
 const getUsers = async (req, res) => {
   try {
-    let query = {};
     const { role, companyId } = req.query;
+    const where = {};
+    if (role) where.role = role;
 
-    if (req.user.role === 'admin') {
-      // Admin can only see users in their companies
-      query.companyIds = { $in: req.user.companyIds };
+    // Build company filter
+    let companyWhere = null;
+    if (req.user.role === 'admin' && req.user.companyIds.length) {
+      companyWhere = { id: req.user.companyIds };
     } else if (companyId) {
-      query.companyIds = companyId;
+      companyWhere = { id: companyId };
     }
-    if (role) query.role = role;
 
-    const users = await User.find(query).select('-password').sort({ createdAt: -1 });
-    res.json({ success: true, users });
+    const includeCompanies = {
+      model: Company,
+      attributes: ['id'],
+      through: { attributes: [] },
+      ...(companyWhere ? { where: companyWhere } : {}),
+    };
+
+    const users = await User.findAll({
+      where,
+      include: [includeCompanies],
+      order: [['createdAt', 'DESC']],
+    });
+
+    const result = users.map((u) => fmt(u, u.Companies));
+    res.json({ success: true, users: result });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -27,37 +43,36 @@ const getUsers = async (req, res) => {
 // GET /api/users/:id
 const getUser = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select('-password');
+    const user = await User.findByPk(req.params.id, {
+      include: [{ model: Company, attributes: ['id'], through: { attributes: [] } }],
+    });
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
-    res.json({ success: true, user });
+    res.json({ success: true, user: fmt(user, user.Companies) });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// POST /api/users  — Admin creates hosts | SuperAdmin creates any
+// POST /api/users
 const createUser = async (req, res) => {
   const { name, email, password, phone, role, companyIds } = req.body;
   try {
-    // Admin can only create hosts for their own companies
     if (req.user.role === 'admin' && role !== 'host') {
       return res.status(403).json({ success: false, message: 'Admins can only create host accounts' });
     }
 
-    const exists = await User.findOne({ email });
+    const exists = await User.findOne({ where: { email } });
     if (exists) return res.status(400).json({ success: false, message: 'Email already registered' });
 
-    const assignedCompanies = req.user.role === 'admin' ? req.user.companyIds : (companyIds || []);
-    const user = await User.create({ name, email, password, phone, role, companyIds: assignedCompanies });
+    const user = await User.create({ name, email, password, phone, role });
 
-    if (role === 'guard' && assignedCompanies.length) {
-      await Company.updateMany(
-        { _id: { $in: assignedCompanies } },
-        { $addToSet: { guardIds: user._id } }
-      );
+    const assignedIds = req.user.role === 'admin' ? req.user.companyIds : (companyIds || []);
+    if (assignedIds.length) {
+      const companies = await Company.findAll({ where: { id: assignedIds } });
+      await user.setCompanies(companies);
     }
 
-    res.status(201).json({ success: true, user });
+    res.status(201).json({ success: true, user: fmt(user, null) });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -67,42 +82,52 @@ const createUser = async (req, res) => {
 const updateUser = async (req, res) => {
   const { name, phone, isActive, password } = req.body;
   try {
-    const user = await User.findById(req.params.id);
+    const user = await User.findByPk(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-    if (name) user.name = name;
-    if (phone) user.phone = phone;
+    if (name !== undefined) user.name = name;
+    if (phone !== undefined) user.phone = phone;
     if (isActive !== undefined) user.isActive = isActive;
-    if (password) user.password = password; // pre-save hook rehashes
+    if (password) user.password = password;
 
     await user.save();
-    res.json({ success: true, user });
+    res.json({ success: true, user: fmt(user, []) });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// GET /api/users/hosts/search?companyId=&q=  — Guard uses this to find host
+// GET /api/users/hosts/search?companyId=&q=
 const searchHosts = async (req, res) => {
   const { companyId, q } = req.query;
   try {
     if (!companyId) return res.status(400).json({ success: false, message: 'companyId required' });
 
-    const query = {
-      role: 'host',
-      companyIds: companyId,
-      isActive: true,
-    };
+    const where = { role: 'host', isActive: true };
     if (q) {
-      query.$or = [
-        { name: { $regex: q, $options: 'i' } },
-        { phone: { $regex: q, $options: 'i' } },
-        { email: { $regex: q, $options: 'i' } },
+      where[Op.or] = [
+        { name: { [Op.like]: `%${q}%` } },
+        { phone: { [Op.like]: `%${q}%` } },
+        { email: { [Op.like]: `%${q}%` } },
       ];
     }
 
-    const hosts = await User.find(query).select('name email phone photoUrl').limit(20);
-    res.json({ success: true, hosts });
+    const hosts = await User.findAll({
+      where,
+      attributes: ['id', 'name', 'email', 'phone', 'photoUrl'],
+      include: [{
+        model: Company,
+        where: { id: companyId },
+        through: { attributes: [] },
+        attributes: [],
+      }],
+      limit: 20,
+    });
+
+    const result = hosts.map((h) => ({
+      _id: h.id, name: h.name, email: h.email, phone: h.phone, photoUrl: h.photoUrl,
+    }));
+    res.json({ success: true, hosts: result });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

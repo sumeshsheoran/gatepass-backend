@@ -1,25 +1,23 @@
-const Visitor = require('../models/Visitor');
-const User = require('../models/User');
-const Company = require('../models/Company');
+const { Visitor, Company, User } = require('../models');
+const { Op } = require('sequelize');
 
-// GET /api/dashboard/live  — Admin: own companies | SuperAdmin: all
+// GET /api/dashboard/live
 const getLiveDashboard = async (req, res) => {
   try {
-    let companyFilter = {};
+    const where = {};
     if (req.user.role === 'admin') {
-      companyFilter = { companyId: { $in: req.user.companyIds } };
+      where.companyId = { [Op.in]: req.user.companyIds.length ? req.user.companyIds : ['__none__'] };
     } else if (req.query.companyId) {
-      companyFilter = { companyId: req.query.companyId };
+      where.companyId = req.query.companyId;
     }
 
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
     const [pending, approved, todayTotal] = await Promise.all([
-      Visitor.find({ ...companyFilter, status: 'pending' }).sort({ checkInTime: -1 }),
-      Visitor.find({ ...companyFilter, status: 'approved' }).sort({ checkInTime: -1 }),
-      (async () => {
-        const start = new Date();
-        start.setHours(0, 0, 0, 0);
-        return Visitor.countDocuments({ ...companyFilter, checkInTime: { $gte: start } });
-      })(),
+      Visitor.findAll({ where: { ...where, status: 'pending' }, order: [['checkInTime', 'DESC']] }),
+      Visitor.findAll({ where: { ...where, status: 'approved' }, order: [['checkInTime', 'DESC']] }),
+      Visitor.count({ where: { ...where, checkInTime: { [Op.gte]: today } } }),
     ]);
 
     res.json({
@@ -37,40 +35,39 @@ const getLiveDashboard = async (req, res) => {
   }
 };
 
-// GET /api/dashboard/stats  — Admin/SuperAdmin
+// GET /api/dashboard/stats
 const getStats = async (req, res) => {
   try {
-    let companyFilter = {};
+    const where = {};
     if (req.user.role === 'admin') {
-      companyFilter = { companyId: { $in: req.user.companyIds } };
+      where.companyId = { [Op.in]: req.user.companyIds.length ? req.user.companyIds : ['__none__'] };
     } else if (req.query.companyId) {
-      companyFilter = { companyId: req.query.companyId };
+      where.companyId = req.query.companyId;
     }
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
     weekAgo.setHours(0, 0, 0, 0);
 
-    const [todayVisitors, weekVisitors, totalVisitors, statusBreakdown] = await Promise.all([
-      Visitor.countDocuments({ ...companyFilter, checkInTime: { $gte: today } }),
-      Visitor.countDocuments({ ...companyFilter, checkInTime: { $gte: weekAgo } }),
-      Visitor.countDocuments(companyFilter),
-      Visitor.aggregate([
-        { $match: companyFilter },
-        { $group: { _id: '$status', count: { $sum: 1 } } },
-      ]),
-    ]);
+    const [todayVisitors, weekVisitors, totalVisitors, pending, approved, denied, checkedOut] =
+      await Promise.all([
+        Visitor.count({ where: { ...where, checkInTime: { [Op.gte]: today } } }),
+        Visitor.count({ where: { ...where, checkInTime: { [Op.gte]: weekAgo } } }),
+        Visitor.count({ where }),
+        Visitor.count({ where: { ...where, status: 'pending' } }),
+        Visitor.count({ where: { ...where, status: 'approved' } }),
+        Visitor.count({ where: { ...where, status: 'denied' } }),
+        Visitor.count({ where: { ...where, status: 'checkedOut' } }),
+      ]);
 
-    // SuperAdmin extras
     let companiesCount = null;
     let usersCount = null;
     if (req.user.role === 'superAdmin') {
       [companiesCount, usersCount] = await Promise.all([
-        Company.countDocuments(),
-        User.countDocuments({ role: { $ne: 'superAdmin' } }),
+        Company.count(),
+        User.count({ where: { role: { [Op.ne]: 'superAdmin' } } }),
       ]);
     }
 
@@ -80,7 +77,7 @@ const getStats = async (req, res) => {
         todayVisitors,
         weekVisitors,
         totalVisitors,
-        statusBreakdown: Object.fromEntries(statusBreakdown.map((s) => [s._id, s.count])),
+        statusBreakdown: { pending, approved, denied, checkedOut },
         companiesCount,
         usersCount,
       },

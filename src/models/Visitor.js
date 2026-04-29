@@ -1,42 +1,26 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const sequelize = require('../config/db');
 
-const visitorSchema = new mongoose.Schema(
-  {
-    companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', required: true },
-    guardId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    guardName: { type: String, required: true },
-    hostId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    hostName: { type: String, required: true },
-    hostPhone: { type: String },
+const Visitor = sequelize.define('Visitor', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  companyId: { type: DataTypes.UUID, allowNull: false },
+  guardId: { type: DataTypes.UUID, allowNull: false },
+  guardName: { type: DataTypes.STRING, allowNull: false },
+  hostId: { type: DataTypes.UUID, allowNull: false },
+  hostName: { type: DataTypes.STRING, allowNull: false },
+  hostPhone: { type: DataTypes.STRING, defaultValue: null },
+  visitorName: { type: DataTypes.STRING, allowNull: false },
+  visitorPhone: { type: DataTypes.STRING, allowNull: false },
+  visitorEmail: { type: DataTypes.STRING, defaultValue: null },
+  visitorPhoto: { type: DataTypes.STRING, defaultValue: null },
+  idProofPhoto: { type: DataTypes.STRING, defaultValue: null },
+  purpose: { type: DataTypes.STRING, allowNull: false },
+  status: { type: DataTypes.STRING, defaultValue: 'pending' },
+  checkInTime: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
+  checkOutTime: { type: DataTypes.DATE, defaultValue: null },
+  approvedAt: { type: DataTypes.DATE, defaultValue: null },
+  deniedAt: { type: DataTypes.DATE, defaultValue: null },
+  denialReason: { type: DataTypes.STRING, defaultValue: null },
+});
 
-    // Visitor details
-    visitorName: { type: String, required: true, trim: true },
-    visitorPhone: { type: String, required: true, trim: true },
-    visitorEmail: { type: String, lowercase: true, trim: true, default: null },
-    visitorPhoto: { type: String, default: null },
-    idProofPhoto: { type: String, default: null },
-    purpose: { type: String, required: true, trim: true },
-
-    // Status flow: pending → approved/denied → checkedOut
-    status: {
-      type: String,
-      enum: ['pending', 'approved', 'denied', 'checkedOut'],
-      default: 'pending',
-    },
-
-    checkInTime: { type: Date, default: Date.now },
-    checkOutTime: { type: Date, default: null },
-    approvedAt: { type: Date, default: null },
-    deniedAt: { type: Date, default: null },
-    denialReason: { type: String, default: null },
-  },
-  { timestamps: true }
-);
-
-// Indexes for common queries
-visitorSchema.index({ companyId: 1, status: 1 });
-visitorSchema.index({ hostId: 1, status: 1 });
-visitorSchema.index({ guardId: 1, checkInTime: -1 });
-visitorSchema.index({ checkInTime: -1 });
-
-module.exports = mongoose.model('Visitor', visitorSchema);
+module.exports = Visitor;

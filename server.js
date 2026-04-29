@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const connectDB = require('./src/config/db');
+const { syncDB } = require('./src/models');
 
 const authRoutes = require('./src/routes/authRoutes');
 const companyRoutes = require('./src/routes/companyRoutes');
@@ -12,16 +12,11 @@ const dashboardRoutes = require('./src/routes/dashboardRoutes');
 
 const app = express();
 
-connectDB();
-
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// Serve uploaded files as static
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/companies', companyRoutes);
 app.use('/api/users', userRoutes);
@@ -38,4 +33,10 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+syncDB().then(() => {
+  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+}).catch((err) => {
+  console.error('Failed to sync database:', err);
+  process.exit(1);
+});
