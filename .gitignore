@@ -1,0 +1,8 @@
+node_modules/
+.env
+uploads/photos/*
+uploads/ids/*
+!uploads/photos/.gitkeep
+!uploads/ids/.gitkeep
+src/config/serviceAccountKey.json
+*.log
