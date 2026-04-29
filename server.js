@@ -32,11 +32,31 @@ app.use((err, req, res, next) => {
   res.status(500).json({ success: false, message: 'Internal server error' });
 });
 
+const { User } = require('./src/models');
+
+const autoSeed = async () => {
+  const exists = await User.findOne({ where: { email: 'superadmin@securegate.com' } });
+  if (!exists) {
+    await User.create({
+      name: 'Super Admin',
+      email: 'superadmin@securegate.com',
+      password: 'Admin@1234',
+      phone: '9999999999',
+      role: 'superAdmin',
+      isActive: true,
+    });
+    console.log('SuperAdmin created: superadmin@securegate.com / Admin@1234');
+  }
+};
+
 const PORT = process.env.PORT || 5000;
 
-syncDB().then(() => {
-  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-}).catch((err) => {
-  console.error('Failed to sync database:', err);
-  process.exit(1);
-});
+syncDB()
+  .then(autoSeed)
+  .then(() => {
+    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+  })
+  .catch((err) => {
+    console.error('Failed to start server:', err);
+    process.exit(1);
+  });
