@@ -1,12 +1,25 @@
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
+
+const uploadsBase = process.env.UPLOADS_PATH
+  ? path.resolve(process.env.UPLOADS_PATH)
+  : path.join(__dirname, '../../uploads');
+
+// ensure directories exist on startup
+['photos', 'ids'].forEach(sub => {
+  const dir = path.join(uploadsBase, sub);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
+
+module.exports.uploadsBase = uploadsBase;
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const dest = file.fieldname === 'idProof'
-      ? path.join(__dirname, '../../uploads/ids')
-      : path.join(__dirname, '../../uploads/photos');
+      ? path.join(uploadsBase, 'ids')
+      : path.join(uploadsBase, 'photos');
     cb(null, dest);
   },
   filename: (req, file, cb) => {
