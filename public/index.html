@@ -603,7 +603,7 @@ async function pageUsers() {
     if (me.role === 'superAdmin') {
       _allCos = (await http('GET','/companies')).companies || [];
     }
-    _users = (await http('GET','/users')).users || [];
+    _users = ((await http('GET','/users')).users || []).map(u => ({ ...u, id: u._id || u.id }));
     renderUsers();
   } catch(e) { setContent(`<div class="empty"><div class="empty-icon">⚠️</div><p>${esc(e.message)}</p></div>`); }
 }
