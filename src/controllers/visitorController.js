@@ -4,7 +4,8 @@ const notificationService = require('../services/notificationService');
 
 const buildPhotoUrl = (filename, folder) => {
   if (!filename) return null;
-  const base = process.env.BASE_URL || '';
+  const base = (process.env.BASE_URL || '').replace(/\/$/, '');
+  if (!base) return null; // no BASE_URL set — photo can't be served
   return `${base}/uploads/${folder}/${filename}`;
 };
 
