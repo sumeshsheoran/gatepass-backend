@@ -13,8 +13,6 @@ const uploadsBase = process.env.UPLOADS_PATH
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
-module.exports.uploadsBase = uploadsBase;
-
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const dest = file.fieldname === 'idProof'
@@ -47,3 +45,4 @@ const upload = multer({
 });
 
 module.exports = upload;
+module.exports.uploadsBase = uploadsBase;
