@@ -11,7 +11,9 @@ const UserCompany = sequelize.define('UserCompany', {
 }, { timestamps: false });
 
 const syncDB = async () => {
-  await sequelize.sync({ alter: true });
+  // force: false — creates tables if they don't exist, never alters/drops
+  // safer for SQLite which has limited ALTER TABLE support
+  await sequelize.sync({ force: false });
   console.log('SQLite database synced');
 };
 
