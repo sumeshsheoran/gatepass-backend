@@ -137,4 +137,20 @@ const searchHosts = async (req, res) => {
   }
 };
 
-module.exports = { getUsers, getUser, createUser, updateUser, searchHosts };
+// DELETE /api/users/:id
+const deleteUser = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.params.id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    if (user.role === 'superAdmin') {
+      return res.status(403).json({ success: false, message: 'Cannot delete superAdmin' });
+    }
+    await UserCompany.destroy({ where: { userId: user.id } });
+    await user.destroy();
+    res.json({ success: true, message: 'User deleted' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+module.exports = { getUsers, getUser, createUser, updateUser, deleteUser, searchHosts };
