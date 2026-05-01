@@ -2,7 +2,11 @@ const { admin, isFirebaseReady } = require('../config/firebase');
 
 const sendToDevice = async (fcmToken, { title, body, data = {} }) => {
   if (!isFirebaseReady()) {
-    console.log('[FCM disabled] Would send:', { fcmToken, title, body });
+    console.warn('[FCM] Firebase not ready — skipping notification. Title:', title);
+    return;
+  }
+  if (!fcmToken) {
+    console.warn('[FCM] No FCM token — skipping notification. Title:', title);
     return;
   }
 
@@ -16,11 +20,12 @@ const sendToDevice = async (fcmToken, { title, body, data = {} }) => {
     },
   };
 
+  console.log('[FCM] Sending:', title, '→ token:', fcmToken.substring(0, 20) + '...');
   try {
     const response = await admin.messaging().send(message);
-    console.log('[FCM] Sent:', response);
+    console.log('[FCM] Success:', response);
   } catch (err) {
-    console.error('[FCM] Error:', err.message);
+    console.error('[FCM] Error:', err.code || '', err.message);
   }
 };
 

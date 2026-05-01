@@ -22,6 +22,8 @@ const runMigrations = async () => {
     }
   };
   await addColumn('Visitors', 'visitorCompany', 'VARCHAR(255) DEFAULT NULL');
+  await addColumn('Users', 'fcmToken', 'VARCHAR(512) DEFAULT NULL');
+  await addColumn('Users', 'photoUrl', 'VARCHAR(512) DEFAULT NULL');
 };
 
 const syncDB = async () => {

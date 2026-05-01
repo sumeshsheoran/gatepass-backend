@@ -27,6 +27,7 @@ app.use('/api/visitors', visitorRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
 app.get('/api/health', (req, res) => {
+  const { isFirebaseReady } = require('./src/config/firebase');
   const proto = req.get('x-forwarded-proto') || req.protocol;
   const host = req.get('x-forwarded-host') || req.get('host');
   res.json({
@@ -34,7 +35,20 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
     baseUrl: process.env.BASE_URL || `${proto}://${host}`,
     uploadsUrl: (process.env.BASE_URL || `${proto}://${host}`) + '/uploads',
+    firebaseReady: isFirebaseReady(),
   });
+});
+
+// Check FCM token status for a user by email
+app.get('/api/check-push/:email', async (req, res) => {
+  try {
+    const { User } = require('./src/models');
+    const user = await User.findOne({ where: { email: req.params.email } });
+    if (!user) return res.json({ found: false });
+    res.json({ found: true, name: user.name, role: user.role, hasFcmToken: !!user.fcmToken, fcmTokenPreview: user.fcmToken ? user.fcmToken.substring(0, 20) + '...' : null });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.use((err, req, res, next) => {
