@@ -10,10 +10,25 @@ const UserCompany = sequelize.define('UserCompany', {
   companyId: { type: DataTypes.UUID, allowNull: false },
 }, { timestamps: false });
 
+const runMigrations = async () => {
+  // Safe ADD COLUMN — SQLite supports ADD but not DROP,
+  // so we catch "duplicate column" errors and continue.
+  const addColumn = async (table, column, definition) => {
+    try {
+      await sequelize.query(`ALTER TABLE "${table}" ADD COLUMN "${column}" ${definition}`);
+      console.log(`Migration: added ${table}.${column}`);
+    } catch {
+      // column already exists — ignore
+    }
+  };
+  await addColumn('Visitors', 'visitorCompany', 'VARCHAR(255) DEFAULT NULL');
+};
+
 const syncDB = async () => {
   // force: false — creates tables if they don't exist, never alters/drops
   // safer for SQLite which has limited ALTER TABLE support
   await sequelize.sync({ force: false });
+  await runMigrations();
   console.log('SQLite database synced');
 };
 

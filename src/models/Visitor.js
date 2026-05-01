@@ -12,6 +12,7 @@ const Visitor = sequelize.define('Visitor', {
   visitorName: { type: DataTypes.STRING, allowNull: false },
   visitorPhone: { type: DataTypes.STRING, allowNull: false },
   visitorEmail: { type: DataTypes.STRING, defaultValue: null },
+  visitorCompany: { type: DataTypes.STRING, defaultValue: null },
   visitorPhoto: { type: DataTypes.STRING, defaultValue: null },
   idProofPhoto: { type: DataTypes.STRING, defaultValue: null },
   purpose: { type: DataTypes.STRING, allowNull: false },

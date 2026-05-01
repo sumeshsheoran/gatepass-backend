@@ -2,10 +2,11 @@ const { Visitor, User } = require('../models');
 const { Op } = require('sequelize');
 const notificationService = require('../services/notificationService');
 
-const buildPhotoUrl = (filename, folder) => {
+const buildPhotoUrl = (req, filename, folder) => {
   if (!filename) return null;
-  const base = (process.env.BASE_URL || '').replace(/\/$/, '');
-  if (!base) return null; // no BASE_URL set — photo can't be served
+  const base = process.env.BASE_URL
+    ? process.env.BASE_URL.replace(/\/$/, '')
+    : `${req.protocol}://${req.get('host')}`;
   return `${base}/uploads/${folder}/${filename}`;
 };
 
@@ -19,11 +20,13 @@ const createVisitor = async (req, res) => {
     }
 
     const visitorPhoto = req.files?.visitorPhoto
-      ? buildPhotoUrl(req.files.visitorPhoto[0].filename, 'photos')
+      ? buildPhotoUrl(req, req.files.visitorPhoto[0].filename, 'photos')
       : null;
     const idProofPhoto = req.files?.idProof
-      ? buildPhotoUrl(req.files.idProof[0].filename, 'ids')
+      ? buildPhotoUrl(req, req.files.idProof[0].filename, 'ids')
       : null;
+
+    const { visitorCompany } = req.body;
 
     const visitor = await Visitor.create({
       companyId,
@@ -35,6 +38,7 @@ const createVisitor = async (req, res) => {
       visitorName,
       visitorPhone,
       visitorEmail,
+      visitorCompany: visitorCompany || null,
       purpose,
       visitorPhoto,
       idProofPhoto,

@@ -7,10 +7,14 @@ const uploadsBase = process.env.UPLOADS_PATH
   ? path.resolve(process.env.UPLOADS_PATH)
   : path.join(__dirname, '../../uploads');
 
-// ensure directories exist on startup
+// ensure directories exist on startup — wrapped so a bad path doesn't crash the server
 ['photos', 'ids'].forEach(sub => {
   const dir = path.join(uploadsBase, sub);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  try {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  } catch (e) {
+    console.warn(`Could not create upload dir ${dir}:`, e.message);
+  }
 });
 
 const storage = multer.diskStorage({
