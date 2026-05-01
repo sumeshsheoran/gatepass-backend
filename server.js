@@ -12,6 +12,7 @@ const dashboardRoutes = require('./src/routes/dashboardRoutes');
 
 const app = express();
 
+app.set('trust proxy', true); // read X-Forwarded-Proto / X-Forwarded-Host from Hostinger's nginx
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -26,7 +27,14 @@ app.use('/api/visitors', visitorRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  const proto = req.get('x-forwarded-proto') || req.protocol;
+  const host = req.get('x-forwarded-host') || req.get('host');
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    baseUrl: process.env.BASE_URL || `${proto}://${host}`,
+    uploadsUrl: (process.env.BASE_URL || `${proto}://${host}`) + '/uploads',
+  });
 });
 
 app.use((err, req, res, next) => {

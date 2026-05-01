@@ -4,9 +4,14 @@ const notificationService = require('../services/notificationService');
 
 const buildPhotoUrl = (req, filename, folder) => {
   if (!filename) return null;
-  const base = process.env.BASE_URL
-    ? process.env.BASE_URL.replace(/\/$/, '')
-    : `${req.protocol}://${req.get('host')}`;
+  let base = (process.env.BASE_URL || '').replace(/\/$/, '');
+  if (!base) {
+    // Behind Hostinger nginx proxy — use forwarded headers for real host/proto
+    const proto = req.get('x-forwarded-proto') || req.protocol;
+    const host = req.get('x-forwarded-host') || req.get('host');
+    base = `${proto}://${host}`;
+  }
+  console.log(`Photo URL base: ${base}`); // temporary — remove after confirming
   return `${base}/uploads/${folder}/${filename}`;
 };
 
