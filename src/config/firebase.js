@@ -7,20 +7,34 @@ let firebaseInitialized = false;
 const initializeFirebase = () => {
   if (firebaseInitialized) return;
 
-  const serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
+  let serviceAccount = null;
 
-  if (!serviceAccountPath || !fs.existsSync(path.resolve(serviceAccountPath))) {
-    console.warn('Firebase service account not found — push notifications disabled.');
+  // Option 1: full JSON stored in env var (preferred for Hostinger)
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    try {
+      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    } catch (e) {
+      console.warn('Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON:', e.message);
+    }
+  }
+
+  // Option 2: path to JSON file
+  if (!serviceAccount && process.env.FIREBASE_SERVICE_ACCOUNT_PATH) {
+    const p = path.resolve(process.env.FIREBASE_SERVICE_ACCOUNT_PATH);
+    if (fs.existsSync(p)) {
+      try { serviceAccount = JSON.parse(fs.readFileSync(p, 'utf8')); } catch {}
+    }
+  }
+
+  if (!serviceAccount) {
+    console.warn('Firebase service account not configured — push notifications disabled.');
     return;
   }
 
   try {
-    const serviceAccount = require(path.resolve(serviceAccountPath));
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-    });
+    admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
     firebaseInitialized = true;
-    console.log('Firebase Admin initialized');
+    console.log('Firebase Admin initialized for project:', serviceAccount.project_id);
   } catch (err) {
     console.warn('Firebase init failed:', err.message);
   }
